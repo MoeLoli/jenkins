@@ -92,13 +92,12 @@ jobs:
           wget ${{ steps.get_code_url.outputs.result }} -O release.zip
           unzip release.zip
           cp -r ./jenkinsci-docker*/* ./
-          sed -i 's/openjdk:11-jdk-stretch/openjdk:11-jdk-slim/' ./Dockerfile-jdk11
           
       - name: Build and push
         uses: docker/build-push-action@v2
         if: steps.get_code_url.outputs.result != ''
         with:
-          file: ./Dockerfile-jdk11
+          file: ./Dockerfile-alpine
           context: .
           platforms: linux/arm64, linux/amd64
           build-args: |
