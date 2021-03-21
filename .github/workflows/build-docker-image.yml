@@ -1,0 +1,111 @@
+name: Build Docker Image
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  ubuntu:
+    runs-on: ubuntu-latest
+    
+    steps:        
+      - name: Checkout
+        uses: actions/checkout@v2
+      
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v1
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
+      
+      - name: Login to DockerHub
+        uses: docker/login-action@v1 
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+          
+      - name: Get Jenkins latest version
+        id: get_latest_version
+        run: |
+          LATEST_VERSION=$(curl -q -fsSL https://repo.jenkins-ci.org/releases/org/jenkins-ci/main/jenkins-war/maven-metadata.xml | grep '<latest>.*</latest>' | grep -E -o '[0-9]+(\.[0-9]+)+' | uniq | tail -n 1)
+          echo "::set-output name=version::${LATEST_VERSION}"
+          SHA=$(curl -q -fsSL "https://repo.jenkins-ci.org/releases/org/jenkins-ci/main/jenkins-war/${LATEST_VERSION}/jenkins-war-${LATEST_VERSION}.war.sha256" )
+          echo "::set-output name=sha::${SHA}"
+      
+      - name: Check Jenkins local version
+        uses: actions/github-script@v3
+        id: get_local_version
+        with:
+          github-token: ${{ github.token }}
+          result-encoding: string
+          script: |
+            let HAVE_TAG = false;
+            const tags = (await github.git.listMatchingRefs({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: 'tags'
+            })).data;
+            for (let tag of tags) {
+              if ((tag.ref).indexOf('${{ steps.get_latest_version.outputs.version }}') != -1) {
+                HAVE_TAG = true;
+              }
+            }
+            if (HAVE_TAG) {
+              return '${{ steps.get_latest_version.outputs.version }}' ;
+            }
+            return '';
+      
+      - name: Create tag
+        uses: actions/github-script@v3
+        if: steps.get_latest_version.outputs.version != '' &&  steps.get_local_version.outputs.result == ''
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            github.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: "refs/tags/${{ steps.get_latest_version.outputs.version }}",
+              sha: context.sha
+            });
+            
+      - name: Get code url
+        id: get_code_url
+        uses: actions/github-script@v3
+        if: steps.get_latest_version.outputs.version != '' &&  steps.get_local_version.outputs.result == ''
+        with:
+          github-token: ${{ github.token }}
+          result-encoding: string
+          script: |
+            const releases = (await github.repos.listReleases({
+              owner: 'jenkinsci',
+              repo: 'docker'
+            })).data;
+            if (releases.length > 0) {
+              return releases[0].zipball_url;
+            }
+            return '';
+            
+      - name: Get code
+        if: steps.get_code_url.outputs.result != ''
+        run: |
+          wget ${{ steps.get_code_url.outputs.result }} -O release.zip
+          unzip release.zip
+          cp -r ./jenkinsci-docker*/* ./
+          sed -i 's/openjdk:11-jdk-stretch/openjdk:11-jdk-slim/' ./Dockerfile-jdk11
+          
+      - name: Build and push
+        uses: docker/build-push-action@v2
+        if: steps.get_code_url.outputs.result != ''
+        with:
+          file: ./Dockerfile-jdk11
+          context: .
+          platforms: linux/arm64, linux/amd64
+          build-args: |
+            JENKINS_VERSION=${{ steps.get_latest_version.outputs.version }}
+            JENKINS_SHA=${{ steps.get_latest_version.outputs.sha }}
+          push: true
+          no-cache: true
+          tags: |
+            ${{ secrets.DOCKER_NS }}/jenkins:${{ steps.get_latest_version.outputs.version }}
+            ${{ secrets.DOCKER_NS }}/jenkins:latest
