@@ -59,7 +59,7 @@ jobs:
             git push --tags
             echo "latest_jenkins_version=${{ steps.get_jenkins_version.outputs.jenkins_version }}" >> $GITHUB_OUTPUT
 
-            SHA=$(curl -q -fsSL "https://repo.jenkins-ci.org/releases/org/jenkins-ci/main/jenkins-war/${{ steps.vars.outputs.tag }}/jenkins-war-${{ steps.vars.outputs.tag }}.war.sha256" )
+            SHA=$(curl -q -fsSL "https://repo.jenkins-ci.org/releases/org/jenkins-ci/main/jenkins-war/${{ steps.get_jenkins_version.outputs.jenkins_version }}/jenkins-war-${{ steps.get_jenkins_version.outputs.jenkins_version }}.war.sha256" )
             echo "latest_jenkins_sha=$SHA" >> $GITHUB_OUTPUT
           fi
             
