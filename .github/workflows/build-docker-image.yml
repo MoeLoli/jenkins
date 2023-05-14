@@ -64,7 +64,7 @@ jobs:
           fi
             
       - name: Build and push
-        uses: docker/build-push-action@v2
+        uses: docker/build-push-action@v4
         if: steps.check_jenkins_version.outputs.latest_jenkins_version != ''
         with:
           file: ./Dockerfile
